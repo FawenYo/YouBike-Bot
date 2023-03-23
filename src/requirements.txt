@@ -1,0 +1,12 @@
+flask
+geopy
+googlemaps
+gunicorn
+line-bot-sdk
+pymongo[srv]
+python-dotenv
+pytz
+requests
+asyncpg
+python-logging-loki
+loguru

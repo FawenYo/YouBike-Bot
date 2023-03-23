@@ -1,0 +1,31 @@
+groups:
+  - name: server_alerts
+    rules:
+      # Alert for any instance that is unreachable for >30 seconds.
+      - alert: InstanceDown
+        expr: up == 0
+        for: 30s
+        labels:
+          severity: page
+        annotations:
+          summary: "Instance {{ $labels.instance }} down"
+          description: "{{ $labels.instance }} of job {{ $labels.job }} has been down for more than 30 seconds."
+
+      # Alert for high load
+      - alert: high_load_average
+        expr: node_load1 / count(node_cpu_seconds_total{mode="system"}) > 0.8
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Instance {{ $labels.instance }} under high load"
+          description: "{{ $labels.instance }} of job {{ $labels.job }} is under high load."
+
+      - alert: low_file_system_space
+        expr: 100 * (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) < 50
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Filesystem is running low on space"
+          description: "The remaining space on the root filesystem is below 50%."
