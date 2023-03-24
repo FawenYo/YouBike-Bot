@@ -21,7 +21,9 @@ async def init_schema() -> None:
 
 
 async def insert_table(table_name: str, insert_commands: List[tuple]) -> None:
-    logger.debug(f"Start to update table {table_name}, inserting {len(insert_commands)} rows...")
+    logger.debug(
+        f"Start to update table {table_name}, inserting {len(insert_commands)} rows..."
+    )
     start_time = time.time()
 
     # Read SQL command from file
