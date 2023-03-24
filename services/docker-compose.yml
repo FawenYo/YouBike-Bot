@@ -244,7 +244,7 @@ services:
 
   # Application
   youbike-bot:
-    image: fawenyo/ntu_bike:1.1.1
+    image: fawenyo/ntu_bike:1.1.2
     container_name: youbike-bot
     deploy:
       restart_policy:
@@ -285,6 +285,24 @@ services:
       - "443:443"
     depends_on:
       - grafana
+      - youbike-bot
+
+  # Cron job
+  cron:
+    image: jsonfry/curl-cron
+    container_name: cron
+    deploy:
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+    environment:
+      - OPTIONS=http://youbike-bot:8000/update
+      - CRON_SCHEDULE=*/5 * * * *
+    networks:
+      - database_network
+    depends_on:
       - youbike-bot
 
 secrets:
