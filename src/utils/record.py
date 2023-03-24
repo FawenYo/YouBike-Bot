@@ -4,22 +4,18 @@ from datetime import datetime
 from typing import Dict, List
 
 import aiohttp
-import asyncpg
 from loguru import logger
 
-import config
+import utils.database as db
 
 
 class Record:
-    def __init__(self, bike_type):
-        self.conn = None
-        self.bike_type = bike_type
-        self.data: Dict[tuple] = []
+    def __init__(self, bike_type: int):
+        self.bike_type: int = bike_type
+        self.data: List[dict] = []
         self.weather_info = {}
 
     async def start(self):
-        self.conn = await asyncpg.connect(config.pg_conn_info)
-
         await asyncio.gather(
             self.fetch_youbike_data(),
             self.fetch_weather(),
@@ -27,8 +23,6 @@ class Record:
 
         await self.update_youbike()
         await self.update_weather()
-        
-        await self.conn.close()
 
     async def fetch_youbike_data(self):
         logger.debug("Fetching YouBike data with API...")
@@ -100,11 +94,12 @@ class Record:
         )
 
     async def update_youbike(self):
-        insert_commands = []
-        await self.init_schema()
-        db_stations = await self.fetch_database_stations()
+        insert_commands: List[tuple[int, datetime, int]] = []
+        insert_stations: List[tuple[int, float, float, str, int, int]] = []
+        await db.init_schema()
+        db_stations = await db.fetch_database_stations(bike_type=self.bike_type)
 
-        logger.info("Start to update bike_history table...")
+        logger.info("Parsing YouBike data...")
 
         for each in self.data:
             station_no = int(each["station_no"])
@@ -115,127 +110,35 @@ class Record:
                 int(each["available_spaces"]),
             )
 
+            station_data = (
+                station_no,
+                float(each["lat"]),
+                float(each["lng"]),
+                str(each["area_code"]),
+                self.bike_type,
+                int(each["parking_spaces"]),
+            )
+
+            # Check if the station is not in the database
             if str(station_no) not in db_stations:
-                await self.insert_station(data=each)
+                insert_stations.append(station_data)
             else:
+                # Check if the station has changed
                 if int(each["parking_spaces"]) != db_stations[str(station_no)]:
-                    await self.insert_station(data=each)
+                    insert_stations.append(station_data)
+
             insert_commands.append(data)
 
-        await self.insert_bike_table(insert_commands=insert_commands)
+        await db.insert_table(table_name="station", insert_commands=insert_stations)
+        await db.insert_table(table_name="bike", insert_commands=insert_commands)
 
     async def update_weather(self):
         insert_commands = []
-        logger.info("Start to update weather_history table...")
+        logger.info("Parsing weather data...")
 
         for station_no in self.weather_info:
             data = self.weather_info[station_no]
 
             insert_commands.append(data)
 
-        await self.insert_weather_table(insert_commands=insert_commands)
-
-    async def fetch_database_stations(self):
-        stations = {}
-
-        async with self.conn.transaction():
-            results = await self.conn.fetch(
-                'SELECT station_id, total_spaces FROM "station_list" WHERE bike_type=$1', self.bike_type
-            )
-            for each in results:
-                stations[str(each["station_id"])] = each["total_spaces"]
-        return stations
-
-    async def insert_bike_table(
-        self, insert_commands: List[tuple]
-    ):
-        _sql_command = f"""
-        INSERT INTO "bike_history" (station_id, time, available_spaces)
-        VALUES ($1, $2, $3)
-        """
-        async with self.conn.transaction():
-            await self.conn.executemany(
-                _sql_command, insert_commands
-            )
-        logger.info("bike_history table updated")
-
-    async def insert_weather_table(
-        self, insert_commands: List[tuple]
-    ):
-        _sql_command = f"""
-        INSERT INTO "weather_history" (station_id, time, temperature, weather_code, wind_speed, wind_degree, pressure, precipitation, humidity, cloudiness, feels_like, visibility, uv_index, wind_gust, is_day, co, no2, o3, so2, pm2_5, pm10, us_epa_index, gb_defra_index)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
-        """
-        async with self.conn.transaction():
-            await self.conn.executemany(
-                _sql_command, insert_commands
-            )
-        logger.info("weather_history table updated")
-
-    async def init_schema(self):
-        async with self.conn.transaction():
-            await self.conn.execute(
-                f"""
-                CREATE TABLE IF NOT EXISTS "station_list"
-                (
-                    station_id     integer UNIQUE,
-                    location       geometry(Point),
-                    area_code      text,
-                    bike_type      smallint,
-                    total_spaces   smallint
-                );
-                CREATE UNIQUE INDEX IF NOT EXISTS "station_id" ON "station_list" (station_id);
-                
-                CREATE TABLE IF NOT EXISTS "bike_history"
-                (
-                    station_id         integer,
-                    time               timestamp,
-                    available_spaces   smallint
-                );
-                CREATE INDEX IF NOT EXISTS "bike_index"
-                    ON "bike_history" (station_id, time);
-                
-                CREATE TABLE IF NOT EXISTS "weather_history"
-                (
-                    station_id       integer,
-                    time             timestamp,
-                    temperature      real,
-                    weather_code     smallint,
-                    wind_speed       real,
-                    wind_degree      smallint,
-                    pressure         real,
-                    precipitation    real,
-                    humidity         int,
-                    cloudiness       int,
-                    feels_like       real,
-                    visibility       real,
-                    uv_index         real,
-                    wind_gust        real,
-                    is_day           smallint,
-                    co               real,
-                    no2              real,
-                    o3               real,
-                    so2              real,
-                    pm2_5            real,
-                    pm10             real,
-                    us_epa_index     smallint,
-                    gb_defra_index   smallint
-                );
-                CREATE INDEX IF NOT EXISTS "weather_index"
-                    ON "weather_history" (station_id, time);
-                """
-            )
-
-    async def insert_station(
-        self,
-        data: dict,
-    ):
-        async with self.conn.transaction():
-            await self.conn.execute(
-                f"""
-            INSERT INTO "station_list" (station_id, location, area_code, bike_type, total_spaces)
-            VALUES ({data['station_no']}, ST_SetSRID(ST_MakePoint({data['lat']}, {data['lng']}), 4326), '{data['area_code']}', {self.bike_type}, {int(data['parking_spaces'])}) 
-            ON CONFLICT (station_id) DO UPDATE SET 
-                total_spaces = EXCLUDED.total_spaces;
-            """
-            )
+        await db.insert_table(table_name="weather", insert_commands=insert_commands)
