@@ -21,7 +21,7 @@ async def init_schema() -> None:
 
 
 async def insert_table(table_name: str, insert_commands: List[tuple]) -> None:
-    logger.debug(f"Updating table {table_name}...")
+    logger.debug(f"Start to update table {table_name}, inserting {len(insert_commands)} rows...")
     start_time = time.time()
 
     # Read SQL command from file
@@ -75,6 +75,6 @@ async def fetch_database_stations(bike_type: int) -> Dict[str, int]:
 
     end_time = time.time()
     logger.debug(
-        f"Database stations fetched. Time taken: {end_time - start_time} seconds"
+        f"Database stations fetched. Total: {len(stations)}. Time taken: {end_time - start_time} seconds"
     )
     return stations
