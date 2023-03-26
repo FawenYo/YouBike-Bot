@@ -1,30 +1,37 @@
 import asyncio
-import os
-from datetime import datetime
-from typing import Dict, List
+import time
+from datetime import datetime, timedelta
+from typing import List
 
 import aiohttp
+import pytz
+import requests
 from loguru import logger
 
 import utils.database as db
 
 
 class Record:
-    def __init__(self, bike_type: int):
+    def __init__(self, bike_type: int = 0):
         self.bike_type: int = bike_type
         self.data: List[dict] = []
-        self.weather_info = {}
+        self.weather_info = []
 
-    async def start(self):
+    async def start_youbike(self):
         await self.fetch_youbike_data()
-        await self.fetch_weather()
 
         await self.update_youbike()
+        logger.info("==========YouBike Record updated==========")
+
+    async def start_weather(self):
+        await self.fetch_weather()
+
         await self.update_weather()
-        logger.info("==========Record updated==========")
+        logger.info("==========Weather Record updated==========")
 
     async def fetch_youbike_data(self):
-        logger.debug("Fetching YouBike data with API...")
+        logger.info("Fetching YouBike data with API...")
+        start_time = time.time()
         async with aiohttp.ClientSession() as session:
             response = await session.get(
                 f"https://apis.youbike.com.tw/api/front/station/all?lang=tw&type={self.bike_type}"
@@ -36,71 +43,123 @@ class Record:
                 # Check if the station is not empty
                 if each["lat"] != "" and each["lng"] != "":
                     self.data.append(each)
-        logger.debug("YouBike data fetched")
+
+        end_time = time.time()
+        logger.info(
+            f"YouBike data fetched. Total stations: {len(self.data)}. Time taken: {end_time - start_time} seconds"
+        )
 
     async def fetch_weather(self):
-        logger.debug("Fetching weather info...")
-        weather_apis: List[str] = os.getenv("WEATHER_API").split(",")
+        start_time = time.time()
+        today = datetime.now(pytz.timezone("Asia/Taipei"))
+        yesterday = today - timedelta(days=1)
+        yesterday_date = yesterday.strftime("%Y-%m-%d")
 
+        # TODO: Extract to a function
+        bike_stations = []
+        for each in requests.get(
+            "https://apis.youbike.com.tw/api/front/station/all?lang=tw&type=1"
+        ).json()["retVal"]:
+            if each["status"] == 1:
+                if each["lat"] != "" and each["lng"] != "":
+                    bike_stations.append(each)
+        for each in requests.get(
+            "https://apis.youbike.com.tw/api/front/station/all?lang=tw&type=2"
+        ).json()["retVal"]:
+            if each["status"] == 1:
+                if each["lat"] != "" and each["lng"] != "":
+                    bike_stations.append(each)
+
+        logger.info("Fetching weather info...")
         async with aiohttp.ClientSession() as session:
             tasks = []
+            TASK_LIMIT = 75
+            stations = [
+                bike_stations[i : i + TASK_LIMIT]
+                for i in range(0, len(bike_stations), TASK_LIMIT)
+            ]
 
-            for index, station in enumerate(self.data):
-                api = weather_apis[index // 110]
-                station_no = str(station["station_no"])
-                time = str(station["updated_at"])
-                lat = str(station["lat"])
-                lng = str(station["lng"])
-                tasks.append(
-                    asyncio.create_task(
-                        self.fetch_weather_info(
-                            session, api, station_no, time, lat, lng
+            for index, substations in enumerate(stations):
+                logger.debug(f"Running task {index}/{len(stations)}")
+                for station in substations:
+                    station_no = str(station["station_no"])
+                    lat = float(station["lat"])
+                    lng = float(station["lng"])
+                    tasks.append(
+                        asyncio.create_task(
+                            self.fetch_weather_info(
+                                session, yesterday_date, station_no, lat, lng
+                            )
                         )
                     )
-                )
+                await asyncio.gather(*tasks)
 
-            await asyncio.gather(*tasks)
-        logger.debug(
-            f"Weather info fetched. Total weather info: {len(self.weather_info)}"
+        end_time = time.time()
+        logger.info(
+            f"Weather info fetched. Total weather info: {len(self.weather_info)}. Time taken: {end_time - start_time} seconds"
         )
 
     async def fetch_weather_info(
         self,
         session: aiohttp.ClientSession,
-        api: str,
+        date_str: str,
         station_no: str,
-        time: str,
-        lat: str,
-        lng: str,
+        lat: float,
+        lng: float,
     ):
         async with session.get(
-            url=f"https://api.weatherapi.com/v1/current.json?key={api}&q={lat},{lng}&aqi=yes"
-        ) as response:
-            json = await response.json()
-            self.weather_info[station_no] = (
-                int(station_no),
-                datetime.strptime(time, "%Y-%m-%d %H:%M:%S"),
-                float(json["current"]["temp_c"]),
-                int(json["current"]["condition"]["code"]),
-                float(json["current"]["wind_kph"]),
-                int(json["current"]["wind_degree"]),
-                float(json["current"]["pressure_mb"]),
-                float(json["current"]["precip_mm"]),
-                int(json["current"]["humidity"]),
-                int(json["current"]["cloud"]),
-                float(json["current"]["feelslike_c"]),
-                float(json["current"]["vis_km"]),
-                float(json["current"]["uv"]),
-                float(json["current"]["gust_kph"]),
-                int(json["current"]["is_day"]),
-                float(json["current"]["air_quality"]["co"]),
-                float(json["current"]["air_quality"]["no2"]),
-                float(json["current"]["air_quality"]["o3"]),
-                float(json["current"]["air_quality"]["so2"]),
-                float(json["current"]["air_quality"]["pm2_5"]),
-                float(json["current"]["air_quality"]["pm10"]),
-                int(json["current"]["air_quality"]["us-epa-index"]),
-                int(json["current"]["air_quality"]["gb-defra-index"]),
+            url=f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lng}&hourly=temperature_2m,relativehumidity_2m,dewpoint_2m,apparent_temperature,precipitation_probability,precipitation,rain,showers,weathercode,pressure_msl,surface_pressure,cloudcover,visibility,evapotranspiration,et0_fao_evapotranspiration,vapor_pressure_deficit,windspeed_10m,windgusts_10m,soil_temperature_0cm,soil_moisture_0_1cm,uv_index,uv_index_clear_sky,cape,freezinglevel_height&timezone=auto&start_date={date_str}&end_date={date_str}"
+        ) as weather_response, session.get(
+            url=f"https://air-quality-api.open-meteo.com/v1/air-quality?latitude={lat}&longitude={lng}&hourly=pm10,pm2_5,carbon_monoxide,nitrogen_dioxide,sulphur_dioxide,ozone,aerosol_optical_depth,dust,uv_index,uv_index_clear_sky,us_aqi,us_aqi_pm2_5,us_aqi_pm10,us_aqi_no2,us_aqi_co,us_aqi_o3,us_aqi_so2&timezone=auto&start_date={date_str}&end_date={date_str}"
+        ) as aq_response:
+            weather_json = await weather_response.json()
+            aq_json = await aq_response.json()
+
+        for index, weather_time in enumerate(weather_json["hourly"]["time"]):
+            self.weather_info.append(
+                (
+                    int(station_no),
+                    datetime.strptime(weather_time, "%Y-%m-%dT%H:%M"),
+                    float(weather_json["hourly"]["temperature_2m"][index]),
+                    float(weather_json["hourly"]["apparent_temperature"][index]),
+                    int(weather_json["hourly"]["relativehumidity_2m"][index]),
+                    float(weather_json["hourly"]["dewpoint_2m"][index]),
+                    int(weather_json["hourly"]["precipitation_probability"][index]),
+                    float(weather_json["hourly"]["precipitation"][index]),
+                    float(weather_json["hourly"]["rain"][index]),
+                    float(weather_json["hourly"]["showers"][index]),
+                    int(weather_json["hourly"]["weathercode"][index]),
+                    float(weather_json["hourly"]["pressure_msl"][index]),
+                    float(weather_json["hourly"]["surface_pressure"][index]),
+                    int(weather_json["hourly"]["cloudcover"][index]),
+                    float(weather_json["hourly"]["visibility"][index]),
+                    float(weather_json["hourly"]["evapotranspiration"][index]),
+                    float(weather_json["hourly"]["et0_fao_evapotranspiration"][index]),
+                    float(weather_json["hourly"]["vapor_pressure_deficit"][index]),
+                    float(weather_json["hourly"]["windspeed_10m"][index]),
+                    float(weather_json["hourly"]["windgusts_10m"][index]),
+                    float(weather_json["hourly"]["soil_temperature_0cm"][index]),
+                    float(weather_json["hourly"]["soil_moisture_0_1cm"][index]),
+                    float(weather_json["hourly"]["uv_index"][index]),
+                    float(weather_json["hourly"]["uv_index_clear_sky"][index]),
+                    float(weather_json["hourly"]["cape"][index]),
+                    float(weather_json["hourly"]["freezinglevel_height"][index]),
+                    float(aq_json["hourly"]["pm2_5"][index]),
+                    float(aq_json["hourly"]["pm10"][index]),
+                    float(aq_json["hourly"]["carbon_monoxide"][index]),
+                    float(aq_json["hourly"]["nitrogen_dioxide"][index]),
+                    float(aq_json["hourly"]["sulphur_dioxide"][index]),
+                    float(aq_json["hourly"]["ozone"][index]),
+                    float(aq_json["hourly"]["aerosol_optical_depth"][index]),
+                    float(aq_json["hourly"]["dust"][index]),
+                    int(aq_json["hourly"]["us_aqi"][index]),
+                    int(aq_json["hourly"]["us_aqi_pm2_5"][index]),
+                    int(aq_json["hourly"]["us_aqi_pm10"][index]),
+                    int(aq_json["hourly"]["us_aqi_no2"][index]),
+                    int(aq_json["hourly"]["us_aqi_co"][index]),
+                    int(aq_json["hourly"]["us_aqi_o3"][index]),
+                    int(aq_json["hourly"]["us_aqi_so2"][index]),
+                )
             )
 
     async def update_youbike(self):
@@ -146,7 +205,7 @@ class Record:
         insert_commands = []
         logger.info("Parsing weather data...")
 
-        for _, data in self.weather_info.items():
+        for data in self.weather_info:
             insert_commands.append(data)
 
         await db.insert_table(table_name="weather", insert_commands=insert_commands)

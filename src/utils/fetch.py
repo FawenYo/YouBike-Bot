@@ -8,12 +8,16 @@ import utils.record
 
 
 class Data:
-    def update(self) -> None:
+    def update_youbike(self) -> None:
         """Update database"""
-        asyncio.run(self.fetch_data(bike_type=1))
-        asyncio.run(self.fetch_data(bike_type=2))
+        asyncio.run(self.fetch_youbike(bike_type=1))
+        asyncio.run(self.fetch_youbike(bike_type=2))
 
-    async def fetch_data(self, bike_type: int) -> None:
+    def update_weather(self) -> None:
+        """Update database"""
+        asyncio.run(self.fetch_weather())
+
+    async def fetch_youbike(self, bike_type: int) -> None:
         """Fetch YouBike data with API
 
         Args:
@@ -53,4 +57,9 @@ class Data:
 
         logger.debug(f"Initalizing PostgreSQL with Youbike {bike_type} data")
         record = utils.record.Record(bike_type=bike_type)
-        await record.start()
+        await record.start_youbike()
+
+    async def fetch_weather(self) -> None:
+        """Fetch weather data with API"""
+        record = utils.record.Record()
+        await record.start_weather()

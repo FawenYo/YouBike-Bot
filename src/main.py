@@ -131,10 +131,18 @@ def index():
     return render_template("Index.html")
 
 
-@app.route("/update")
-def update():
-    logger.info("Cron Job triggered")
-    job = threading.Thread(target=Data().update)
+@app.route("/update/youbike")
+def youbike_update():
+    logger.info("==========Start to update Youbike data==========")
+    job = threading.Thread(target=Data().update_youbike)
+    job.start()
+    return "Job started"
+
+
+@app.route("/update/weather")
+def weather_update():
+    logger.info("==========Start to update weather data==========")
+    job = threading.Thread(target=Data().update_weather)
     job.start()
     return "Job started"
 
