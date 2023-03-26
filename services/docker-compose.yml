@@ -244,7 +244,7 @@ services:
 
   # Application
   youbike-bot:
-    image: fawenyo/ntu_bike:1.1.2
+    image: fawenyo/ntu_bike:1.1.3
     container_name: youbike-bot
     deploy:
       restart_policy:
@@ -289,7 +289,7 @@ services:
 
   # Cron job
   cron:
-    image: jsonfry/curl-cron
+    image: fawenyo/cron:1.0.0
     container_name: cron
     deploy:
       restart_policy:
@@ -298,8 +298,7 @@ services:
         max_attempts: 3
         window: 120s
     environment:
-      - OPTIONS=http://youbike-bot:8000/update
-      - CRON_SCHEDULE=*/5 * * * *
+      - CRON_JOBS=curl http://youbike-bot:8000/update/youbike | */1 * * * *, curl http://youbike-bot:8000/update/weather | 0 0 * * *
     networks:
       - database_network
     depends_on:
