@@ -1,7 +1,6 @@
 import re
 from datetime import datetime, timedelta
 
-import pytz
 from geopy.distance import geodesic
 from googlemaps import Client
 from linebot.models import *
@@ -289,7 +288,7 @@ class Templates:
         return message_contents
 
     def route(self, user_lat, user_lng, lat, lng):
-        now = datetime.now(pytz.timezone("Asia/Taipei"))
+        now = datetime.now()
         origin = "{}, {}".format(user_lat, user_lng)
         destination = "{}, {}".format(lat, lng)
         logger.debug(f"directing to {destination} from {origin}")

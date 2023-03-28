@@ -1,4 +1,4 @@
-INSERT INTO "bike_history" (
+INSERT INTO "{{date}}" (
   station_id, time, available_spaces
 )
 VALUES

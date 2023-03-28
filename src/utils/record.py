@@ -4,11 +4,13 @@ from datetime import datetime, timedelta
 from typing import List
 
 import aiohttp
-import pytz
 import requests
 from loguru import logger
+from prometheus_client import Gauge
 
+import config
 import utils.database as db
+from config import station_gauges, total_gauge
 
 
 class Record:
@@ -51,7 +53,7 @@ class Record:
 
     async def fetch_weather(self):
         start_time = time.time()
-        today = datetime.now(pytz.timezone("Asia/Taipei"))
+        today = datetime.now()
         yesterday = today - timedelta(days=1)
         yesterday_date = yesterday.strftime("%Y-%m-%d")
 
@@ -165,7 +167,8 @@ class Record:
     async def update_youbike(self):
         insert_commands: List[tuple[int, datetime, int]] = []
         insert_stations: List[tuple[int, float, float, str, int, int]] = []
-        await db.init_schema()
+        today_date: str = datetime.now().strftime("%Y-%m-%d")
+        await db.init_schema(date=today_date)
         db_stations = await db.fetch_database_stations(bike_type=self.bike_type)
 
         logger.info("Parsing YouBike data...")
@@ -177,6 +180,12 @@ class Record:
                 station_no,
                 datetime.strptime(each["updated_at"], "%Y-%m-%d %H:%M:%S"),
                 int(each["available_spaces"]),
+            )
+
+            # Set the value of the metric to your data
+            await self.add_metrics(
+                station_no=station_no,
+                value=int(each["available_spaces"]),
             )
 
             station_data = (
@@ -198,8 +207,9 @@ class Record:
 
             insert_commands.append(data)
 
+        total_gauge.inc(len(insert_commands))
         await db.insert_table(table_name="station", insert_commands=insert_stations)
-        await db.insert_table(table_name="bike", insert_commands=insert_commands)
+        await db.insert_table(table_name=today_date, insert_commands=insert_commands)
 
     async def update_weather(self):
         insert_commands = []
@@ -209,3 +219,19 @@ class Record:
             insert_commands.append(data)
 
         await db.insert_table(table_name="weather", insert_commands=insert_commands)
+
+    async def add_metrics(self, station_no: int, value: int) -> None:
+        global station_gauges
+
+        if f"{station_no}" not in station_gauges:
+            gauge_metric = Gauge(
+                f"station_{station_no}",
+                "Number of available spaces at a bike station",
+                ["station_no"],
+                registry=config.registry,
+            )
+            station_gauges[f"{station_no}"] = gauge_metric
+        else:
+            gauge_metric = station_gauges[f"{station_no}"]
+
+        gauge_metric.labels(station_no).set(value)

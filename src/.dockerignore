@@ -1,6 +1,8 @@
-fly.toml
 **/.DS_Store
 *.log
 Dockerfile*
 .dockerignore
 .env
+resource/*
+venv/*
+__pycache__/*

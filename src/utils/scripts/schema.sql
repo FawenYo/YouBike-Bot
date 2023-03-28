@@ -9,12 +9,12 @@ CREATE TABLE IF NOT EXISTS "station_list" (
 CREATE UNIQUE INDEX IF NOT EXISTS "station_id" ON "station_list" (station_id);
 
 /* Bike history */
-CREATE TABLE IF NOT EXISTS "bike_history" (
+CREATE TABLE IF NOT EXISTS "{{date}}" (
   station_id integer,
   time timestamp,
   available_spaces smallint
 );
-CREATE INDEX IF NOT EXISTS "bike_index" ON "bike_history" (station_id, time);
+CREATE INDEX IF NOT EXISTS "{{date}}_index" ON "{{date}}" (station_id, time);
 
 /* Weather history */
 CREATE TABLE IF NOT EXISTS "weather_history" (

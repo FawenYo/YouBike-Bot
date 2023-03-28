@@ -1,12 +1,12 @@
 import threading
 from datetime import datetime
 
-import pytz
-from flask import abort, render_template, request
+from flask import Response, abort, render_template, request
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
 from linebot.models import *
 from loguru import logger
+from prometheus_client import generate_latest
 
 import config
 from config import app
@@ -74,7 +74,7 @@ def handle_message(event):
     else:
         action = "return"
     if isinstance(event.message, LocationMessage):
-        now = datetime.now(pytz.timezone("Asia/Taipei"))
+        now = datetime.now()
         current_time = now.strftime("%Y/%m/%d %H:%M:%S")
         latitude = float(event.message.latitude)
         longitude = float(event.message.longitude)
@@ -109,7 +109,7 @@ def handle_message(event):
 
 @handler.add(FollowEvent)
 def handle_follow(event):
-    now = datetime.now(pytz.timezone("Asia/Taipei"))
+    now = datetime.now()
     current_time = now.strftime("%Y/%m/%d %H:%M:%S")
     user = {
         "uuid": event.source.user_id,
@@ -145,6 +145,13 @@ def weather_update():
     job = threading.Thread(target=Data().update_weather)
     job.start()
     return "Job started"
+
+
+@app.route("/metrics")
+def metrics():
+    # Generate the metrics data in Prometheus format and return it as a Flask response
+    data = generate_latest(config.registry)
+    return Response(data, content_type="text/plain; version=0.0.4; charset=utf-8")
 
 
 if __name__ == "__main__":

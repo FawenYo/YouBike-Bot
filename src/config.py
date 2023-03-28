@@ -2,14 +2,12 @@ import os
 
 import logging_loki
 import pymongo
-from dotenv import load_dotenv
 from flask import Flask
+from prometheus_client import CollectorRegistry, Gauge
 
 #########################
 # Environment Variables #
 #########################
-
-load_dotenv()
 
 client = pymongo.MongoClient(os.getenv("MONGO_CLIENT"))
 db = client["Database"]
@@ -46,3 +44,13 @@ logging_handler = logging_loki.LokiHandler(
 ##############
 
 pg_conn_info = f"postgresql://{os.getenv('POSTGRES_USER')}:{os.getenv('POSTGRES_PASSWORD')}@{os.getenv('POSTGRES_HOST')}:{os.getenv('POSTGRES_PORT')}/{os.getenv('POSTGRES_DB')}"
+
+######################
+# Prometheus Metrics #
+######################
+
+# Create a registry to hold your custom metrics
+registry = CollectorRegistry()
+station_gauges = {}
+
+total_gauge = Gauge("Total_record", "Number of record in database", registry=registry)

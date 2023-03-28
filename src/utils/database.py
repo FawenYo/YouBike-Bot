@@ -7,14 +7,17 @@ from loguru import logger
 import config
 
 
-async def init_schema() -> None:
+async def init_schema(date: str) -> None:
     # Connect to PostgreSQL
     conn = await asyncpg.connect(config.pg_conn_info)
 
     # Execute SQL command from file
     async with conn.transaction():
         with open("utils/scripts/schema.sql", "r") as f:
-            await conn.execute(f.read())
+            sql_script = f.read()
+            sql_script = sql_script.replace("{{date}}", date)
+
+            await conn.execute(sql_script)
 
     # Close connection
     await conn.close()
@@ -27,8 +30,13 @@ async def insert_table(table_name: str, insert_commands: List[tuple]) -> None:
     start_time = time.time()
 
     # Read SQL command from file
-    with open(f"utils/scripts/{table_name}_insert.sql", "r") as f:
-        _sql_command = f.read()
+    if table_name == "weather" or table_name == "station":
+        with open(f"utils/scripts/{table_name}_insert.sql", "r") as f:
+            _sql_command = f.read()
+    else:
+        with open(f"utils/scripts/bike_insert.sql", "r") as f:
+            _sql_command = f.read()
+            _sql_command = _sql_command.replace("{{date}}", table_name)
 
     # Connect to PostgreSQL
     conn = await asyncpg.connect(config.pg_conn_info)
@@ -42,7 +50,7 @@ async def insert_table(table_name: str, insert_commands: List[tuple]) -> None:
 
     end_time = time.time()
     logger.info(
-        f"{table_name}_history table updated. Time taken: {end_time - start_time} seconds"
+        f"{table_name} table updated. Time taken: {end_time - start_time} seconds"
     )
 
 
