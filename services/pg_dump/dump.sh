@@ -19,6 +19,10 @@ echo "Job started: $(date). Dumping to ${FILE}"
 pg_dump -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -f "$FILE" -d "$POSTGRES_DB" -t "$TABLE"
 gzip "$FILE"
 
+echo "Table $TABLE dumped to ${FILE}.gz. Deleting table $TABLE"
+psql -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$POSTGRES_DB" -c "DROP TABLE \"$TABLE\";"
+echo "Table $TABLE deleted"
+
 echo "Retaining ${RETAIN_COUNT} files"
 
 if [[ ${RETAIN_COUNT} -gt 0 ]]; then
